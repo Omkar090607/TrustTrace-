@@ -1,0 +1,50 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-cd24f962e86f29a6dbbf120cb43f8cda5ef904c4",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "compilerType": "solc",
+  "userSourceNameMap": {
+    "contracts/test/TrustTraceRegistry.t.sol": "project/contracts/test/TrustTraceRegistry.t.sol",
+    "contracts/TrustTraceRegistry.sol": "project/contracts/TrustTraceRegistry.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 300
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode.linkReferences",
+            "evm.bytecode.object",
+            "evm.bytecode.opcodes",
+            "evm.bytecode.sourceMap",
+            "evm.deployedBytecode.immutableReferences",
+            "evm.deployedBytecode.linkReferences",
+            "evm.deployedBytecode.object",
+            "evm.deployedBytecode.opcodes",
+            "evm.deployedBytecode.sourceMap",
+            "evm.methodIdentifiers"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/test/TrustTraceRegistry.t.sol": {
+        "content": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.28;\r\n\r\nimport \"../TrustTraceRegistry.sol\";\r\n\r\ninterface Vm {\r\n    struct Log {\r\n        bytes32[] topics;\r\n        bytes data;\r\n        address emitter;\r\n    }\r\n\r\n    function recordLogs() external;\r\n    function getRecordedLogs() external returns (Log[] memory);\r\n}\r\n\r\ncontract TrustTraceRegistryTest {\r\n    Vm private constant vm = Vm(address(uint160(uint256(keccak256(\"hevm cheat code\")))));\r\n\r\n    function testAnchorStoresAndVerifiesProof() external {\r\n        TrustTraceRegistry registry = new TrustTraceRegistry();\r\n        bytes32 traceHash = keccak256(\"event-proof\");\r\n\r\n        registry.anchor(traceHash);\r\n\r\n        require(registry.isAnchored(traceHash), \"hash not anchored\");\r\n        (bool exists, uint256 timestamp, uint256 blockNumber, address submitter) = registry.getAnchor(traceHash);\r\n        require(exists, \"anchor missing\");\r\n        require(timestamp == block.timestamp, \"wrong timestamp\");\r\n        require(blockNumber == block.number, \"wrong block\");\r\n        require(submitter == address(this), \"wrong submitter\");\r\n    }\r\n\r\n    function testEmitsAnchorEvent() external {\r\n        TrustTraceRegistry registry = new TrustTraceRegistry();\r\n        bytes32 traceHash = keccak256(\"event-log-proof\");\r\n\r\n        vm.recordLogs();\r\n        registry.anchor(traceHash);\r\n        Vm.Log[] memory logs = vm.getRecordedLogs();\r\n\r\n        require(logs.length == 1, \"expected one anchor event\");\r\n        require(logs[0].emitter == address(registry), \"wrong event emitter\");\r\n        require(logs[0].topics[0] == keccak256(\"HashAnchored(bytes32,uint256,uint256,address)\"), \"wrong event signature\");\r\n        require(logs[0].topics[1] == traceHash, \"wrong event hash\");\r\n    }\r\n\r\n    function testRejectsEmptyAndDuplicateHashes() external {\r\n        TrustTraceRegistry registry = new TrustTraceRegistry();\r\n        (bool emptySuccess,) = address(registry).call(abi.encodeCall(registry.anchor, (bytes32(0))));\r\n        require(!emptySuccess, \"empty hash accepted\");\r\n\r\n        bytes32 traceHash = keccak256(\"unique-proof\");\r\n        registry.anchor(traceHash);\r\n        (bool duplicateSuccess,) = address(registry).call(abi.encodeCall(registry.anchor, (traceHash)));\r\n        require(!duplicateSuccess, \"duplicate hash accepted\");\r\n        require(registry.isAnchored(traceHash), \"original anchor changed\");\r\n    }\r\n\r\n    function testDifferentHashesAreIndependent() external {\r\n        TrustTraceRegistry registry = new TrustTraceRegistry();\r\n        bytes32 firstHash = keccak256(\"first-proof\");\r\n        bytes32 secondHash = keccak256(\"second-proof\");\r\n\r\n        registry.anchor(firstHash);\r\n        registry.anchor(secondHash);\r\n\r\n        require(registry.isAnchored(firstHash), \"first hash missing\");\r\n        require(registry.isAnchored(secondHash), \"second hash missing\");\r\n        require(registry.anchorSubmitter(firstHash) == address(this), \"first submitter changed\");\r\n        require(registry.anchorSubmitter(secondHash) == address(this), \"second submitter changed\");\r\n    }\r\n}"
+      },
+      "project/contracts/TrustTraceRegistry.sol": {
+        "content": "// SPDX-License-Identifier: MIT\r\npragma solidity ^0.8.28;\r\n\r\ncontract TrustTraceRegistry {\r\n    mapping(bytes32 => uint256) public anchoredAt;\r\n    mapping(bytes32 => uint256) public anchoredBlock;\r\n    mapping(bytes32 => address) public anchorSubmitter;\r\n\r\n    event HashAnchored(bytes32 indexed eventHash, uint256 timestamp, uint256 blockNumber, address indexed submitter);\r\n\r\n    error EmptyHash();\r\n    error AlreadyAnchored(bytes32 eventHash);\r\n\r\n    function anchor(bytes32 eventHash) external returns (uint256 timestamp) {\r\n        if (eventHash == bytes32(0)) revert EmptyHash();\r\n        if (anchoredAt[eventHash] != 0) revert AlreadyAnchored(eventHash);\r\n\r\n        timestamp = block.timestamp;\r\n        anchoredAt[eventHash] = timestamp;\r\n        anchoredBlock[eventHash] = block.number;\r\n        anchorSubmitter[eventHash] = msg.sender;\r\n        emit HashAnchored(eventHash, timestamp, block.number, msg.sender);\r\n    }\r\n\r\n    function isAnchored(bytes32 eventHash) external view returns (bool) {\r\n        return anchoredAt[eventHash] != 0;\r\n    }\r\n\r\n    function getAnchor(bytes32 eventHash) external view returns (bool exists, uint256 timestamp, uint256 blockNumber, address submitter) {\r\n        timestamp = anchoredAt[eventHash];\r\n        exists = timestamp != 0;\r\n        if (exists) return (true, timestamp, anchoredBlock[eventHash], anchorSubmitter[eventHash]);\r\n    }\r\n}\r\n"
+      }
+    }
+  }
+}

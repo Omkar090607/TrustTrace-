@@ -1,0 +1,7 @@
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+
+type ActivityPoint = { day: string; events: number; anchors: number }
+
+export default function ActivityChart({ data }: { data: ActivityPoint[] }) {
+  return <ResponsiveContainer width="100%" height="100%"><AreaChart data={data} margin={{ top: 8, right: 4, left: -19, bottom: 0 }}><defs><linearGradient id="eventFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#36816f" stopOpacity={0.2} /><stop offset="100%" stopColor="#36816f" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="#ebefec" strokeDasharray="3 4" vertical={false} /><XAxis dataKey="day" tickFormatter={(day: string) => new Date(day).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} tick={{ fill: '#9aa5a0', fontSize: 9 }} axisLine={false} tickLine={false} minTickGap={24} /><YAxis allowDecimals={false} tick={{ fill: '#9aa5a0', fontSize: 9 }} axisLine={false} tickLine={false} width={28} /><Tooltip labelFormatter={(day) => new Date(String(day)).toLocaleDateString()} contentStyle={{ border: '1px solid #e5ebe7', borderRadius: 5, fontSize: 10 }} /><Area type="monotone" dataKey="events" name="Supply-chain events" stroke="#36816f" strokeWidth={2} fill="url(#eventFill)" /><Area type="monotone" dataKey="anchors" name="Blockchain anchors" stroke="#91b6d2" strokeWidth={1.5} fill="none" /></AreaChart></ResponsiveContainer>
+}

@@ -1,0 +1,32 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+
+:root {
+  font-family: 'DM Sans', 'Segoe UI', sans-serif;
+  color: #192a2a;
+  background: #f4f6f4;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --ink: #192a2a;
+  --muted: #788481;
+  --line: #e7ece9;
+  --canvas: #f4f6f4;
+  --surface: #ffffff;
+  --forest: #173f3b;
+  --green: #1e806e;
+  --mint: #e6f3ee;
+  --blue: #e8f0fa;
+  --gold: #f8f0dc;
+  --coral: #f9eae5;
+  --mono: 'IBM Plex Mono', Consolas, monospace;
+  font-optical-sizing: auto;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+a { color: inherit; text-decoration: none; }
+::selection { color: #fff; background: #2b796b; }

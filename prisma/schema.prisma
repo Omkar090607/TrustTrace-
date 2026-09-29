@@ -1,0 +1,641 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProductDomain {
+  PHARMACEUTICAL
+  LUXURY
+  FOOD
+  PERISHABLE
+  ELECTRONICS
+  HIGH_VALUE
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+  UNDER_REVIEW
+}
+
+enum BatchStatus {
+  MANUFACTURED
+  QUALITY_CHECK
+  APPROVED
+  QUARANTINED
+  PACKED
+  IN_WAREHOUSE
+  RESERVED
+  DISPATCHED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  PARTIALLY_RETURNED
+  RETURNED
+  RECALLED
+  EXPIRED
+  DAMAGED
+  DISPOSED
+}
+
+enum QualityStatus {
+  PENDING
+  PASSED
+  FAILED
+  CONDITIONAL
+}
+
+enum BlockchainStatus {
+  PENDING
+  ANCHORED
+  ANCHOR_FAILED
+}
+
+enum ShipmentStatus {
+  DRAFT
+  READY
+  DISPATCHED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  PARTIALLY_DELIVERED
+  CANCELLED
+}
+
+enum ReturnStatus {
+  REQUESTED
+  RECEIVED
+  INSPECTING
+  RESTOCKED
+  QUARANTINED
+  RECALLED
+  DISPOSED
+  REJECTED
+}
+
+enum RecallStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+model User {
+  id             String               @id @default(uuid()) @db.Uuid
+  email          String               @unique
+  fullName       String
+  passwordHash   String
+  roleId         String?              @db.Uuid
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  role           Role?                @relation(fields: [roleId], references: [id])
+  memberships    OrganizationMember[]
+  auditLogs      AuditLog[]
+  events         SupplyChainEvent[]
+  refreshTokens  RefreshToken[]
+  notifications  Notification[]
+  requestedReturns Return[]          @relation("ReturnRequester")
+  uploadedDocuments Document[]       @relation("DocumentUploader")
+  createdInvoices Invoice[]          @relation("InvoiceCreator")
+  recordedPayments Payment[]         @relation("PaymentRecorder")
+  createdRefunds Refund[]            @relation("RefundCreator")
+  @@index([createdAt])
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  name        String           @unique
+  description String?
+  users       User[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  key         String           @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  @@id([roleId, permissionId])
+}
+
+model Organization {
+  id        String               @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime             @default(now())
+  members   OrganizationMember[]
+  products  Product[]
+  locations InventoryLocation[]
+  settings  SystemSetting[]
+  returns   Return[]
+  invoices  Invoice[]
+  documents Document[]
+  notifications Notification[]
+  @@index([createdAt])
+}
+
+model OrganizationMember {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @db.Uuid
+  userId         String       @db.Uuid
+  roleName       String       @default("MEMBER")
+  joinedAt       DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model ProductCategory {
+  id        String        @id @default(uuid()) @db.Uuid
+  name      String
+  domain    ProductDomain
+  products  Product[]
+  @@unique([name, domain])
+  @@index([domain])
+}
+
+model Product {
+  id             String             @id @default(uuid()) @db.Uuid
+  productCode    String             @unique
+  domain         ProductDomain      @default(PHARMACEUTICAL)
+  categoryId     String?            @db.Uuid
+  organizationId String?            @db.Uuid
+  name           String
+  genericName    String?
+  brandName      String?
+  attributes     Json               @default("{}")
+  status         RecordStatus       @default(ACTIVE)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  category       ProductCategory?   @relation(fields: [categoryId], references: [id])
+  organization   Organization?      @relation(fields: [organizationId], references: [id])
+  attributesMap  ProductAttribute[]
+  identity       ProductIdentity?
+  batches        Batch[]
+  certificates   Certificate[]
+  events         SupplyChainEvent[]
+  documents      Document[]
+  @@index([productCode])
+  @@index([status])
+  @@index([createdAt])
+  @@index([domain, organizationId])
+}
+
+model ProductAttribute {
+  id        String   @id @default(uuid()) @db.Uuid
+  productId String   @db.Uuid
+  key       String
+  value     Json
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@unique([productId, key])
+}
+
+model ProductIdentity {
+  id        String   @id @default(uuid()) @db.Uuid
+  traceId   String   @unique
+  productId String   @unique @db.Uuid
+  createdAt DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  @@index([traceId])
+}
+
+model Batch {
+  id                   String           @id @default(uuid()) @db.Uuid
+  batchNumber          String           @unique
+  productId            String           @db.Uuid
+  manufacturingDate    DateTime
+  expiryDate           DateTime
+  quantityManufactured Int
+  available            Int              @default(0)
+  reserved             Int              @default(0)
+  dispatched           Int              @default(0)
+  delivered            Int              @default(0)
+  returned             Int              @default(0)
+  damaged              Int              @default(0)
+  recalled             Int              @default(0)
+  unitCost             Decimal?         @db.Decimal(14, 4)
+  sellingPrice         Decimal?         @db.Decimal(14, 4)
+  currency             String           @default("USD")
+  manufacturer         String
+  manufacturingLocation String?
+  storageLocationId    String?          @db.Uuid
+  qualityStatus        QualityStatus    @default(PENDING)
+  status               BatchStatus      @default(MANUFACTURED)
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  product              Product          @relation(fields: [productId], references: [id])
+  storageLocation      InventoryLocation? @relation(fields: [storageLocationId], references: [id])
+  inventory            Inventory[]
+  movements            InventoryMovement[]
+  qualityChecks        QualityCheck[]
+  packageItems         PackageItem[]
+  shipmentItems        ShipmentItem[]
+  events               SupplyChainEvent[]
+  returnItems          ReturnItem[]
+  certificates         Certificate[]
+  documents            Document[]
+  @@index([batchNumber])
+  @@index([expiryDate])
+  @@index([status])
+  @@index([productId, status])
+}
+
+model InventoryLocation {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizationId String?         @db.Uuid
+  name           String
+  address        Json            @default("{}")
+  createdAt      DateTime        @default(now())
+  organization   Organization?   @relation(fields: [organizationId], references: [id])
+  inventory      Inventory[]
+  batches        Batch[]
+  movements      InventoryMovement[]
+}
+
+model Inventory {
+  id         String           @id @default(uuid()) @db.Uuid
+  batchId    String           @db.Uuid
+  locationId String           @db.Uuid
+  onHand     Int              @default(0)
+  reserved   Int              @default(0)
+  updatedAt  DateTime         @updatedAt
+  batch      Batch            @relation(fields: [batchId], references: [id])
+  location   InventoryLocation @relation(fields: [locationId], references: [id])
+  @@unique([batchId, locationId])
+  @@index([locationId])
+}
+
+model InventoryMovement {
+  id         String           @id @default(uuid()) @db.Uuid
+  batchId    String           @db.Uuid
+  locationId String           @db.Uuid
+  quantity   Int
+  reason     String
+  actorId    String?          @db.Uuid
+  createdAt  DateTime         @default(now())
+  batch      Batch            @relation(fields: [batchId], references: [id])
+  location   InventoryLocation @relation(fields: [locationId], references: [id])
+  @@index([createdAt])
+}
+
+model Package {
+  id        String        @id @default(uuid()) @db.Uuid
+  traceId   String        @unique
+  packageType String
+  createdAt DateTime      @default(now())
+  items     PackageItem[]
+}
+
+model PackageItem {
+  id        String  @id @default(uuid()) @db.Uuid
+  packageId String  @db.Uuid
+  batchId   String  @db.Uuid
+  quantity  Int
+  package   Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  batch     Batch   @relation(fields: [batchId], references: [id])
+}
+
+model QualityCheck {
+  id           String        @id @default(uuid()) @db.Uuid
+  batchId      String        @db.Uuid
+  performedBy  String?       @db.Uuid
+  result       QualityStatus @default(PENDING)
+  details      Json          @default("{}")
+  checkedAt    DateTime?
+  createdAt    DateTime      @default(now())
+  batch        Batch         @relation(fields: [batchId], references: [id])
+  @@index([result, createdAt])
+}
+
+model Certificate {
+  id              String   @id @default(uuid()) @db.Uuid
+  certificateNumber String  @unique
+  productId        String?  @db.Uuid
+  batchId          String?  @db.Uuid
+  type             String   @default("OTHER")
+  status           String   @default("ACTIVE")
+  isPublic         Boolean  @default(false)
+  issuer           String
+  documentId       String?
+  issuedAt         DateTime?
+  expiresAt        DateTime?
+  verifiedAt       DateTime?
+  createdAt        DateTime @default(now())
+  product          Product? @relation(fields: [productId], references: [id])
+  batch            Batch?   @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  @@index([expiresAt])
+}
+
+model Shipment {
+  id             String          @id @default(uuid()) @db.Uuid
+  trackingNumber String          @unique
+  organizationId String?         @db.Uuid
+  status         ShipmentStatus  @default(DRAFT)
+  origin         Json            @default("{}")
+  destination    Json            @default("{}")
+  dispatchedAt  DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime        @default(now())
+  items          ShipmentItem[]
+  statusHistory  ShipmentStatusHistory[]
+  temperatures   TemperatureRecord[]
+  returns        Return[]
+  documents      Document[]
+  @@index([trackingNumber])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ShipmentItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  shipmentId String   @db.Uuid
+  batchId    String   @db.Uuid
+  quantity   Int
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  batch      Batch    @relation(fields: [batchId], references: [id])
+}
+
+model ShipmentStatusHistory {
+  id         String         @id @default(uuid()) @db.Uuid
+  shipmentId String         @db.Uuid
+  status     ShipmentStatus
+  note       String?
+  occurredAt DateTime       @default(now())
+  shipment   Shipment       @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  @@index([occurredAt])
+}
+
+model TemperatureRecord {
+  id           String    @id @default(uuid()) @db.Uuid
+  shipmentId   String?   @db.Uuid
+  recordedAt   DateTime  @default(now())
+  temperatureC Decimal   @db.Decimal(6, 2)
+  humidityPct  Decimal?  @db.Decimal(5, 2)
+  metadata     Json      @default("{}")
+  shipment     Shipment? @relation(fields: [shipmentId], references: [id])
+  @@index([recordedAt])
+}
+
+model SupplyChainEvent {
+  id                     String          @id @default(uuid()) @db.Uuid
+  eventType              String
+  productId              String          @db.Uuid
+  batchId                String?         @db.Uuid
+  packageId              String?         @db.Uuid
+  actorId                String?         @db.Uuid
+  organizationId         String?         @db.Uuid
+  locationId             String?         @db.Uuid
+  timestamp              DateTime        @default(now())
+  quantity               Int?
+  metadata               Json            @default("{}")
+  previousHash           String?
+  currentHash            String
+  blockchainStatus       BlockchainStatus @default(PENDING)
+  blockchainTransactionHash String?
+  createdAt              DateTime        @default(now())
+  product                Product         @relation(fields: [productId], references: [id])
+  batch                  Batch?          @relation(fields: [batchId], references: [id])
+  actor                  User?           @relation(fields: [actorId], references: [id])
+  anchor                 TraceabilityAnchor?
+  @@index([productId, createdAt])
+  @@index([batchId, createdAt])
+  @@index([createdAt])
+  @@index([blockchainStatus])
+}
+
+model TraceabilityAnchor {
+  id            String          @id @default(uuid()) @db.Uuid
+  eventId       String          @unique @db.Uuid
+  eventHash     String
+  status        BlockchainStatus @default(PENDING)
+  transactionHash String?
+  blockNumber   BigInt?
+  contractAddress String?
+  chainId       String?
+  networkName   String?
+  failureCode   String?
+  attemptCount  Int              @default(0)
+  lastAttemptAt DateTime?
+  anchoredAt    DateTime?
+  createdAt     DateTime        @default(now())
+  event         SupplyChainEvent @relation(fields: [eventId], references: [id])
+  @@index([status, createdAt])
+}
+
+model VerificationRecord {
+  id             String   @id @default(uuid()) @db.Uuid
+  traceId        String
+  databaseVerified Boolean
+  blockchainVerified Boolean
+  certificateVerified Boolean
+  result         String
+  checkedAt      DateTime @default(now())
+  @@index([traceId, checkedAt])
+}
+
+model Return {
+  id             String       @id @default(uuid()) @db.Uuid
+  returnNumber   String       @unique
+  organizationId String?      @db.Uuid
+  shipmentId     String?      @db.Uuid
+  requestedById  String?      @db.Uuid
+  status         ReturnStatus @default(REQUESTED)
+  reason         String
+  requestedAt    DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  items          ReturnItem[]
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  shipment       Shipment?    @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  requestedBy    User?        @relation("ReturnRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  documents      Document[]
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ReturnItem {
+  id               String            @id @default(uuid()) @db.Uuid
+  returnId         String            @db.Uuid
+  batchId          String            @db.Uuid
+  quantity         Int
+  deliveredQuantity Int
+  returnRecord     Return            @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  batch            Batch             @relation(fields: [batchId], references: [id])
+  inspections      ReturnInspection[]
+}
+
+model ReturnInspection {
+  id           String     @id @default(uuid()) @db.Uuid
+  returnItemId String     @db.Uuid
+  outcome      String
+  notes        String?
+  inspectedBy  String?    @db.Uuid
+  inspectedAt  DateTime   @default(now())
+  returnItem   ReturnItem @relation(fields: [returnItemId], references: [id])
+}
+
+model Recall {
+  id             String       @id @default(uuid()) @db.Uuid
+  recallNumber   String       @unique
+  organizationId String?      @db.Uuid
+  reason         String
+  status         RecallStatus @default(DRAFT)
+  createdAt      DateTime     @default(now())
+  items          RecallItem[]
+  @@index([status])
+}
+
+model RecallItem {
+  id        String @id @default(uuid()) @db.Uuid
+  recallId  String @db.Uuid
+  batchId   String @db.Uuid
+  quantity  Int?
+  recall    Recall @relation(fields: [recallId], references: [id], onDelete: Cascade)
+}
+
+model Invoice {
+  id            String        @id @default(uuid()) @db.Uuid
+  invoiceNumber String        @unique
+  organizationId String?      @db.Uuid
+  status        String        @default("DRAFT")
+  currency      String        @default("USD")
+  subtotal      Decimal       @default(0) @db.Decimal(14, 2)
+  total         Decimal       @default(0) @db.Decimal(14, 2)
+  createdById   String?       @db.Uuid
+  createdAt     DateTime      @default(now())
+  items         InvoiceItem[]
+  payments      Payment[]
+  organization  Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy     User?         @relation("InvoiceCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  @@index([invoiceNumber])
+  @@index([createdAt])
+}
+
+model InvoiceItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  invoiceId   String  @db.Uuid
+  description String
+  quantity    Int
+  unitPrice   Decimal @db.Decimal(14, 4)
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id          String        @id @default(uuid()) @db.Uuid
+  invoiceId   String        @db.Uuid
+  amount      Decimal       @db.Decimal(14, 2)
+  currency    String
+  status      PaymentStatus @default(PENDING)
+  providerRef String?
+  method      String?
+  recordedById String?       @db.Uuid
+  createdAt   DateTime      @default(now())
+  invoice     Invoice       @relation(fields: [invoiceId], references: [id])
+  refunds     Refund[]
+  recordedBy  User?         @relation("PaymentRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Refund {
+  id        String   @id @default(uuid()) @db.Uuid
+  paymentId String   @db.Uuid
+  amount    Decimal  @db.Decimal(14, 2)
+  reason    String
+  createdById String? @db.Uuid
+  createdAt DateTime @default(now())
+  payment   Payment  @relation(fields: [paymentId], references: [id])
+  createdBy User?    @relation("RefundCreator", fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model AuditLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  actorId        String?  @db.Uuid
+  organizationId String?  @db.Uuid
+  action         String
+  resourceType   String
+  resourceId     String?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  actor          User?    @relation(fields: [actorId], references: [id])
+  @@index([createdAt])
+  @@index([resourceType, resourceId])
+}
+
+model Document {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  contentType  String
+  storageKey   String
+  sizeBytes    Int
+  checksum     String
+  organizationId String? @db.Uuid
+  productId    String?  @db.Uuid
+  batchId      String?  @db.Uuid
+  shipmentId   String?  @db.Uuid
+  returnId     String?  @db.Uuid
+  uploadedById String?  @db.Uuid
+  uploadedAt   DateTime @default(now())
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  batch        Batch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  shipment     Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+  returnRecord Return? @relation(fields: [returnId], references: [id], onDelete: SetNull)
+  uploadedBy   User? @relation("DocumentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  @@index([uploadedAt])
+  @@index([organizationId, uploadedAt])
+}
+
+model Notification {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  title     String
+  body      String
+  organizationId String? @db.Uuid
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@index([organizationId, userId, readAt])
+  @@index([createdAt])
+}
+
+model SystemSetting {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizationId String?       @db.Uuid
+  key            String
+  value          Json
+  updatedAt      DateTime      @updatedAt
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  @@unique([organizationId, key])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, expiresAt])
+}
